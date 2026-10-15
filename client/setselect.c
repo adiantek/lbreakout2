@@ -620,13 +620,13 @@ const char * setselect_run()
 {
 	SDL_Event event;
 	int leave = 0;
-	SDL_EventFilter old_filter;
+	StkEventFilter old_filter;
 	
 	/* backup current filter (which takes out motion events) as we work	
 	 * with WaitEvent() for the moment; see manager_run() how it is done
 	 * for polling events. */
-	old_filter = SDL_GetEventFilter();
-	SDL_SetEventFilter( 0 );
+	old_filter = stk_get_event_filter();
+	stk_set_event_filter( 0 );
 	
 	/* TODO: reload set infos if necessary */
 	
@@ -659,7 +659,7 @@ const char * setselect_run()
 	}
 	
 	/* restore event filter */
-	SDL_SetEventFilter(old_filter);
+	stk_set_event_filter(old_filter);
 	
 	return ssd.selected_set; /* is a pointer to ssd.set_infos */
 }

@@ -62,7 +62,7 @@ the latest motion and pass just the very first motion event to
 the queue (so we know that it occured)
 ====================================================================
 */
-SDL_EventFilter gui_old_event_filter = 0;
+StkEventFilter gui_old_event_filter = 0;
 int gui_uses_event_filter = 0;
 SDL_Event gui_sdl_motion_event;
 int gui_event_filter( const SDL_Event *event )
@@ -425,16 +425,16 @@ gui_disable_event_filter() restores the previous filter.
 void gui_enable_event_filter()
 {
     /* already in use? */
-    if ( SDL_GetEventFilter() == gui_event_filter )
+    if ( stk_get_event_filter() == gui_event_filter )
         return;
     /* install */
-    gui_old_event_filter = SDL_GetEventFilter();
-    SDL_SetEventFilter( gui_event_filter );
+    gui_old_event_filter = stk_get_event_filter();
+    stk_set_event_filter( gui_event_filter );
     gui_sdl_motion_event.type = SDL_NOEVENT;
     gui_uses_event_filter = 1;
 }
 void gui_disable_event_filter()
 {
-    SDL_SetEventFilter( gui_old_event_filter );
+    stk_set_event_filter( gui_old_event_filter );
     gui_uses_event_filter = 0;
 }

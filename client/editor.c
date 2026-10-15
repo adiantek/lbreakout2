@@ -788,7 +788,7 @@ void editor_run()
                         case SDLK_RIGHT: editor_handle_button( BUTTON_NEXT, &full_update ); break;
                         case SDLK_UP: editor_handle_button( BUTTON_FIRST, &full_update ); break;
                         case SDLK_f:
-                            config.fullscreen = !config.fullscreen;
+                            config.fullscreen = !stk_display_get_fullscreen();
                             stk_display_apply_fullscreen( config.fullscreen );
                             full_update = 1;
                             break;

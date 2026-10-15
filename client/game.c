@@ -510,7 +510,7 @@ void open_pause_chat( char *text )
 	stk_display_update( STK_UPDATE_ALL );
 
 	/* disable event filter */
-	SDL_SetEventFilter( 0 );
+	stk_set_event_filter( 0 );
 	/* disable client_recv which is called as time event */
 	gui_widget_disable_event( dlg_chatroom, GUI_TIME_PASSED );
 }
@@ -521,7 +521,7 @@ void close_pause_chat( void )
 	set_state( CS_PLAY );
 
 	/* enable event filter */
-	SDL_SetEventFilter( event_filter );
+	stk_set_event_filter( event_filter );
 	gui_widget_enable_event( dlg_chatroom, GUI_TIME_PASSED );
 }
 
@@ -602,7 +602,7 @@ static int handle_default_key( int key, int *abort )
 		case SDLK_f:
 			buffer = stk_surface_create( SDL_SWSURFACE, 640, 480 );
 			SDL_BlitSurface( stk_display, 0, buffer, 0 );
-			config.fullscreen = !config.fullscreen;
+			config.fullscreen = !stk_display_get_fullscreen();
 			stk_display_apply_fullscreen( config.fullscreen );
 			SDL_BlitSurface( buffer, 0, stk_display, 0 );
 			stk_display_update( STK_UPDATE_ALL);
@@ -1162,6 +1162,15 @@ void client_game_run( void )
 					key_pressed = 0;
 			}
 			else
+#if SDL_VERSION_ATLEAST(2,0,0)
+			if (event.type == SDL_WINDOWEVENT)
+			  {
+			    if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+				event.window.event == SDL_WINDOWEVENT_MINIMIZED ||
+				event.window.event == SDL_WINDOWEVENT_HIDDEN )
+			      client_set_pause(1);
+			  }
+#else
 			if (event.type == SDL_ACTIVEEVENT)
 		          {
 			    if (event.active.state == SDL_APPINPUTFOCUS ||
@@ -1169,6 +1178,7 @@ void client_game_run( void )
                             if (event.active.gain == 0 )
 			      client_set_pause(1);
 			  }
+#endif
 		}
 		else if ( client_state == CS_PAUSE && game->game_type == GT_NETWORK )
 			gui_dispatch_event( 0, ms );

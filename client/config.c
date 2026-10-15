@@ -263,5 +263,6 @@ void config_save( )
         fprintf( file, "mp_rounds»%i\n", config.mp_rounds );
         fprintf( file, "mp_frags»%i\n", config.mp_frags );
         fprintf( file, "mp_balls»%i\n", config.mp_balls );
+        fclose( file );
     }
 }

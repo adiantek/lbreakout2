@@ -1,0 +1,78 @@
+# Build the WebAssembly version (see emscripten/README) and deploy it to
+# Cloudflare Pages.
+#
+# Repository settings:
+#   secrets.CLOUDFLARE_API_TOKEN   API token with "Cloudflare Pages: Edit"
+#   secrets.CLOUDFLARE_ACCOUNT_ID  Cloudflare account id
+#   vars.CLOUDFLARE_PROJECT_NAME   Pages project
+#
+# Pull requests are only built. Pushes to main/master deploy to production,
+# a manual run from another branch deploys a preview of that branch.
+
+name: Web build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EMSDK_VERSION: 6.0.12
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          # also keeps the compiled SDL2/libpng ports between runs
+          actions-cache-folder: emsdk-cache
+
+      - name: Build
+        run: make -f emscripten/Makefile -j"$(nproc)"
+
+      - name: Collect files
+        run: |
+          mkdir dist
+          cp build-web/index.html build-web/index.js build-web/index.wasm build-web/index.data dist/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lbreakout2-web
+          path: dist
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cloudflare-pages-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT: ${{ vars.CLOUDFLARE_PROJECT_NAME }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: lbreakout2-web
+          path: dist
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Deploy
+        run: |
+          npx --yes wrangler@4 pages deploy dist \
+            --project-name "$PROJECT" \
+            --branch "$GITHUB_REF_NAME" \
+            --commit-hash "$GITHUB_SHA"

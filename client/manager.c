@@ -47,6 +47,7 @@ extern StkSound *wav_menu_motion;
 #endif
 /* some items we need to know to assign name lists later */
 Item *item_set, *item_theme, *item_resume_0;
+Item *item_display;
 extern List *charts;
 int chart_id = 0; /* current chart displayed */
 /* theme name list */
@@ -502,26 +503,26 @@ void manager_create()
     /* setup filter */
     filter_clear( filter );
     filter_set( filter, SDLK_a, SDLK_z, 1 );
-    filter[SDLK_BACKSPACE] = 1;
-    filter[SDLK_SPACE] = 1;
-    filter[SDLK_RSHIFT] = 1;
-    filter[SDLK_LSHIFT] = 1;
-    filter[SDLK_LALT] = 1;
-    filter[SDLK_RALT] = 1;
-    filter[SDLK_LCTRL] = 1;
-    filter[SDLK_RCTRL] = 1;
-    filter[SDLK_UP] = 1;
-    filter[SDLK_DOWN] = 1;
-    filter[SDLK_LEFT] = 1;
-    filter[SDLK_RIGHT] = 1;
-    filter[SDLK_q] = 0;
-    filter[SDLK_p] = 0;
-    filter[SDLK_f] = 0;
-    filter[SDLK_s] = 0;
-    filter[SDLK_a] = 0;
-    filter[SDLK_r] = 0;
-    filter[SDLK_h] = 0;
-    filter[SDLK_d] = 0;
+    filter[STK_KEYIDX(SDLK_BACKSPACE)] = 1;
+    filter[STK_KEYIDX(SDLK_SPACE)] = 1;
+    filter[STK_KEYIDX(SDLK_RSHIFT)] = 1;
+    filter[STK_KEYIDX(SDLK_LSHIFT)] = 1;
+    filter[STK_KEYIDX(SDLK_LALT)] = 1;
+    filter[STK_KEYIDX(SDLK_RALT)] = 1;
+    filter[STK_KEYIDX(SDLK_LCTRL)] = 1;
+    filter[STK_KEYIDX(SDLK_RCTRL)] = 1;
+    filter[STK_KEYIDX(SDLK_UP)] = 1;
+    filter[STK_KEYIDX(SDLK_DOWN)] = 1;
+    filter[STK_KEYIDX(SDLK_LEFT)] = 1;
+    filter[STK_KEYIDX(SDLK_RIGHT)] = 1;
+    filter[STK_KEYIDX(SDLK_q)] = 0;
+    filter[STK_KEYIDX(SDLK_p)] = 0;
+    filter[STK_KEYIDX(SDLK_f)] = 0;
+    filter[STK_KEYIDX(SDLK_s)] = 0;
+    filter[STK_KEYIDX(SDLK_a)] = 0;
+    filter[STK_KEYIDX(SDLK_r)] = 0;
+    filter[STK_KEYIDX(SDLK_h)] = 0;
+    filter[STK_KEYIDX(SDLK_d)] = 0;
 
     /* menus are added to this list for deleting later */
     menus = list_create( LIST_AUTO_DELETE, menu_delete );
@@ -589,9 +590,9 @@ void manager_create()
     menu_add( gfx, item_create_switch_x( _("Animations:"), HINT_ANIM, &config.anim, str_anim, 4 ) );
     menu_add( gfx, item_create_switch( _("Bonus Info:"), HINT_BONUS_INFO, &config.bonus_info, _("Off"), _("On") ) );
     menu_add( gfx, item_create_separator( "" ) );
-    item = item_create_switch( _("Display:"), HINT_DISPLAY, &config.fullscreen, _("Window"), _("Fullscreen") );
-    item->callback = cb_fullscreen;
-    menu_add( gfx, item );
+    item_display = item_create_switch( _("Display:"), HINT_DISPLAY, &config.fullscreen, _("Window"), _("Fullscreen") );
+    item_display->callback = cb_fullscreen;
+    menu_add( gfx, item_display );
     menu_add( gfx, item_create_switch_x( _("Frame Rate:"), HINT_FPS, &config.fps, str_fps, 2 ) );
     menu_add( gfx, item_create_separator( "" ) );
     menu_add( gfx, item_create_link( _("Select Theme"), HINT_THEME, theme ) );
@@ -736,7 +737,7 @@ int manager_run()
 		     (cur_menu->cur_item->type != ITEM_EDIT && cur_menu->cur_item->type != ITEM_KEY ) )
 		if ( event.type == SDL_KEYDOWN )
 		if ( event.key.keysym.sym == SDLK_f ) {
-			config.fullscreen = !config.fullscreen;
+			config.fullscreen = !stk_display_get_fullscreen();
 			stk_display_apply_fullscreen( config.fullscreen );
 			stk_surface_blit( mbkgnd, 0,0,-1,-1, stk_display, 0,0 );
 			stk_display_update( STK_UPDATE_ALL );
@@ -745,6 +746,10 @@ int manager_run()
 	}
 	else
 		menu_handle_event( cur_menu, 0 ); /* update motion */
+        /* follow fullscreen changes made elsewhere ('f', the browser) */
+        if ( config.fullscreen != stk_display_get_fullscreen() )
+            config.fullscreen = !config.fullscreen;
+        value_update_str( item_display->value );
         ms = stk_timer_get_time();
         menu_update( cur_menu, ms );
         hint_update( ms );

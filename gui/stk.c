@@ -18,8 +18,12 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <png.h>
 #include "stk.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 //#define STK_DEBUG
 
@@ -51,6 +55,11 @@ int stk_audio_sound_enabled = 1;
 int stk_audio_sound_volume = 127;
 int stk_audio_buffer_size = 512;
 int stk_screenshot_id = 1;
+#if SDL_VERSION_ATLEAST(2,0,0)
+SDL_Window *stk_window = 0;
+static StkEventFilter stk_user_event_filter = 0;
+static int SDLCALL stk_event_filter_wrapper( void *data, SDL_Event *event );
+#endif
 
 /* Load a PNG type image from an SDL datasource */
 #define IMG_SetError	SDL_SetError
@@ -169,7 +178,9 @@ static SDL_Surface *IMG_LoadPNG_RW(SDL_RWops *src)
 
 	/* Allocate the SDL surface to hold the image */
 	Rmask = Gmask = Bmask = Amask = 0 ; 
-	if ( color_type != PNG_COLOR_TYPE_PALETTE ) {
+	/* 8bit grayscale is loaded as paletted surface (no masks) */
+	if ( color_type != PNG_COLOR_TYPE_PALETTE &&
+	     png_get_channels(png_ptr, info_ptr) >= 3 ) {
 		if ( SDL_BYTEORDER == SDL_LIL_ENDIAN ) {
 			Rmask = 0x000000FF;
 			Gmask = 0x0000FF00;
@@ -278,6 +289,12 @@ static void stk_quit( void )
 {
     stk_surface_free( &stk_display );
     stk_cursor_free( &stk_empty_cursor );
+#if SDL_VERSION_ATLEAST(2,0,0)
+    if ( stk_window ) {
+        SDL_DestroyWindow( stk_window );
+        stk_window = 0;
+    }
+#endif
     if ( stk_surface_path ) {
         free( stk_surface_path );
         stk_surface_path = 0;
@@ -311,8 +328,16 @@ void stk_init( int flags )
     /* init SDL */
     if ( SDL_Init( flags ) < 0 )
         STK_ABORT( SDL_GetError() );
+#if SDL_VERSION_ATLEAST(2,0,0)
+    /* unicode is derived from the key events, see stk_event_unicode() */
+    SDL_EventState( SDL_TEXTINPUT, SDL_IGNORE );
+    SDL_EventState( SDL_TEXTEDITING, SDL_IGNORE );
+    /* translate SDL2 events into what SDL 1.2 delivered */
+    SDL_SetEventFilter( stk_event_filter_wrapper, 0 );
+#else
     /* enable unicode */
     SDL_EnableUNICODE( 1 );
+#endif
     /* set cleanup function */
     atexit( stk_quit );
     /* set current directory as path for surfaces */
@@ -375,6 +400,87 @@ This funtion returns True if the wanted width and height are
 available, False if not and it aborts when no display is found.
 ====================================================================
 */
+#ifdef __EMSCRIPTEN__
+/* In the browser the page itself is switched with the Fullscreen API
+   instead of SDL_SetWindowFullscreen(): the canvas keeps its size and
+   CSS scaling, and a request the browser refuses (it is only granted
+   shortly after a key press or click) leaves everything as it was.
+   While a request is pending the requested state is reported. */
+EM_JS( void, stk_web_set_fullscreen, (int on), {
+    var doc = document, el = doc.documentElement;
+    if ( !on == !( doc.fullscreenElement || doc.webkitFullscreenElement ) )
+        return;
+    var request = on ? ( el.requestFullscreen || el.webkitRequestFullscreen )
+                     : ( doc.exitFullscreen || doc.webkitExitFullscreen );
+    if ( !request )
+        return;
+    var pending = Module.stkFullscreenPending = { on: on ? 1 : 0 };
+    var done = function() {
+        if ( Module.stkFullscreenPending === pending )
+            Module.stkFullscreenPending = null;
+    };
+    try {
+        Promise.resolve( request.call( on ? el : doc ) ).then( done, function( e ) {
+            console.warn( 'Fullscreen request failed:', e && e.message );
+            done();
+        } );
+    } catch ( e ) {
+        done();
+    }
+} );
+EM_JS( int, stk_web_get_fullscreen, (void), {
+    if ( Module.stkFullscreenPending )
+        return Module.stkFullscreenPending.on;
+    return ( document.fullscreenElement || document.webkitFullscreenElement ) ? 1 : 0;
+} );
+#endif
+
+#if SDL_VERSION_ATLEAST(2,0,0)
+static void stk_display_set_fullscreen( int fullscreen )
+{
+#ifdef __EMSCRIPTEN__
+    stk_web_set_fullscreen( fullscreen );
+#else
+    int is_fullscreen = ( SDL_GetWindowFlags( stk_window ) & SDL_WINDOW_FULLSCREEN ) != 0;
+    if ( fullscreen != is_fullscreen )
+        SDL_SetWindowFullscreen( stk_window, fullscreen ? SDL_WINDOW_FULLSCREEN : 0 );
+#endif
+}
+
+int stk_display_open( int flags, int width, int height, int depth )
+{
+    SDL_Surface *icon;
+    if ( stk_display ) {
+        /* the window is kept; only the fullscreen state may change */
+        if ( stk_display->w == width && stk_display->h == height ) {
+            stk_display_set_fullscreen( ( flags & SDL_FULLSCREEN ) != 0 );
+            return 1;
+        }
+        stk_surface_free( &stk_display );
+        SDL_SetWindowSize( stk_window, width, height );
+    }
+    else {
+        stk_window = SDL_CreateWindow( "", 
+                         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                         width, height, 0 );
+        if ( stk_window == 0 )
+            STK_ABORT( SDL_GetError() );
+        /* load window icon on first time setup */
+        if ( ( icon = png_load( SRC_DIR "/gfx/win_icon.png" ) ) ) {
+            SDL_SetColorKey( icon, SDL_SRCCOLORKEY, 0 );
+            SDL_SetWindowIcon( stk_window, icon );
+            SDL_FreeSurface( icon );
+        }
+    }
+    /* all drawing goes to this software surface like with SDL 1.2 */
+    stk_display = SDL_CreateRGBSurfaceWithFormat( 0, width, height, depth,
+                      depth > 16 ? SDL_PIXELFORMAT_RGB888 : SDL_PIXELFORMAT_RGB565 );
+    if ( stk_display == 0 )
+        STK_ABORT( SDL_GetError() );
+    stk_display_set_fullscreen( ( flags & SDL_FULLSCREEN ) != 0 );
+    return 1;
+}
+#else
 int stk_display_open( int flags, int width, int height, int depth )
 {
 #ifdef STK_DEBUG
@@ -426,6 +532,7 @@ int stk_display_open( int flags, int width, int height, int depth )
 		
     return 1;
 }
+#endif
 
 /*
 ====================================================================
@@ -473,6 +580,47 @@ void stk_display_store_drect( void )
         stk_update_rects[stk_update_rect_count++] = stk_drect;
 }
 
+#ifdef __EMSCRIPTEN__
+/* Return control to the browser until the next animation frame.
+   The canvas is only presented and input is only received while
+   the browser has control. */
+EM_ASYNC_JS( void, stk_web_wait_frame, (void), {
+    await new Promise( function( resolve ) {
+        requestAnimationFrame( function() { resolve(); } );
+    } );
+} );
+#endif
+
+#if SDL_VERSION_ATLEAST(2,0,0)
+/* copy the display surface to the window: all of it if 'rects' is NULL */
+static void stk_display_present( SDL_Rect *rects, int count )
+{
+    SDL_Surface *screen = SDL_GetWindowSurface( stk_window );
+    SDL_Rect rect;
+    int i;
+    if ( screen ) {
+        if ( screen->w != stk_display->w || screen->h != stk_display->h ) {
+            SDL_BlitScaled( stk_display, 0, screen, 0 );
+            SDL_UpdateWindowSurface( stk_window );
+        }
+        else if ( rects == 0 ) {
+            SDL_BlitSurface( stk_display, 0, screen, 0 );
+            SDL_UpdateWindowSurface( stk_window );
+        }
+        else if ( count > 0 ) {
+            for ( i = 0; i < count; i++ ) {
+                rect = rects[i];
+                SDL_BlitSurface( stk_display, &rect, screen, &rect );
+            }
+            SDL_UpdateWindowSurfaceRects( stk_window, rects, count );
+        }
+    }
+#ifdef __EMSCRIPTEN__
+    stk_web_wait_frame();
+#endif
+}
+#endif
+
 /*
 ====================================================================
 Either update all gathered rects or simply the full screen.
@@ -481,12 +629,20 @@ In any case the stored regions are cleared.
 */
 void stk_display_update( int type )
 {
+#if SDL_VERSION_ATLEAST(2,0,0)
+    if ( type == STK_UPDATE_ALL || 
+         stk_update_rect_count == STK_UPDATE_RECT_LIMIT )
+        stk_display_present( 0, 0 );
+    else
+        stk_display_present( stk_update_rects, stk_update_rect_count );
+#else
     if ( type == STK_UPDATE_ALL || 
          stk_update_rect_count == STK_UPDATE_RECT_LIMIT )
         SDL_UpdateRect( stk_display, 0, 0, 0, 0 );
     else
         SDL_UpdateRects( stk_display, stk_update_rect_count,
                          stk_update_rects );
+#endif
     stk_update_rect_count = 0;
 }
 
@@ -575,6 +731,9 @@ Switch fullscreen/windowed for current resolution.
 */
 void stk_display_apply_fullscreen( int fullscreen )
 {
+#if SDL_VERSION_ATLEAST(2,0,0)
+    stk_display_set_fullscreen( fullscreen );
+#else
     int flags = stk_display->flags;
     if ( fullscreen && stk_display->flags & SDL_FULLSCREEN )
         return;
@@ -586,6 +745,24 @@ void stk_display_apply_fullscreen( int fullscreen )
         flags &= ~SDL_FULLSCREEN;
     stk_display_open( flags, stk_display->w, stk_display->h, 
         stk_display->format->BitsPerPixel );
+#endif
+}
+
+/*
+====================================================================
+Return True if the display is in fullscreen mode (or, in the browser,
+a switch to fullscreen is pending).
+====================================================================
+*/
+int stk_display_get_fullscreen( void )
+{
+#ifdef __EMSCRIPTEN__
+    return stk_web_get_fullscreen();
+#elif SDL_VERSION_ATLEAST(2,0,0)
+    return ( SDL_GetWindowFlags( stk_window ) & SDL_WINDOW_FULLSCREEN ) != 0;
+#else
+    return ( stk_display->flags & SDL_FULLSCREEN ) != 0;
+#endif
 }
 
 /* SURFACE */
@@ -670,7 +847,11 @@ SDL_Surface* stk_surface_load( int flags, char *format, ... )
     
     /* convert if display open */
     if ( stk_display ) {
+#if SDL_VERSION_ATLEAST(2,0,0)
+        converted_surface = SDL_ConvertSurface( surface, stk_display->format, 0 );
+#else
         converted_surface = SDL_DisplayFormat( surface );
+#endif
         if ( converted_surface == 0 ) {
             fprintf( stderr, "Conversion of %s failed: %s\n", 
                      path, SDL_GetError() );
@@ -783,6 +964,16 @@ void stk_surface_alpha_blit(
     SDL_Surface *src, int sx, int sy, int sw, int sh,
     SDL_Surface *dest, int dx, int dy, int alpha )
 {
+#if SDL_VERSION_ATLEAST(2,0,0)
+    SDL_BlendMode old_mode;
+    Uint8 old_alpha;
+    SDL_GetSurfaceBlendMode( src, &old_mode );
+    SDL_GetSurfaceAlphaMod( src, &old_alpha );
+    SDL_SetAlpha( src, SDL_SRCALPHA, alpha );
+    stk_surface_blit( src, sx,sy,sw,sh, dest, dx,dy );
+    SDL_SetSurfaceAlphaMod( src, old_alpha );
+    SDL_SetSurfaceBlendMode( src, old_mode );
+#else
     if ( src->flags & SDL_SRCALPHA )
         stk_old_alpha = src->format->alpha;
     else
@@ -794,6 +985,7 @@ void stk_surface_alpha_blit(
     else
         SDL_SetAlpha( src, SDL_SRCALPHA, 
                       stk_old_alpha );
+#endif
 }
 
 /*
@@ -1233,6 +1425,10 @@ int stk_audio_open(
     if ( format == 0 ) format = MIX_DEFAULT_FORMAT;
     if ( channels == 0 ) channels = 2;
     if ( chunksize == 0 ) chunksize = stk_audio_buffer_size;
+#ifdef __EMSCRIPTEN__
+    /* the browser mixes on the main thread: small buffers underrun */
+    if ( chunksize < 1024 ) chunksize = 1024;
+#endif
     if ( Mix_OpenAudio( 
              frequency, format, channels, chunksize ) < 0 ) {
         fprintf( stderr, "%s\n", SDL_GetError() );
@@ -1466,3 +1662,223 @@ void stk_sound_fade_out( StkSound *sound, int ms )
         Mix_FadeOutChannel( sound->channel, ms );
 #endif
 }
+
+/* EVENTS */
+
+/*
+====================================================================
+Set/get the event filter. The filter has the SDL 1.2 signature.
+====================================================================
+*/
+void stk_set_event_filter( StkEventFilter filter )
+{
+#if SDL_VERSION_ATLEAST(2,0,0)
+    stk_user_event_filter = filter;
+#else
+    SDL_SetEventFilter( (SDL_EventFilter)filter );
+#endif
+}
+StkEventFilter stk_get_event_filter( void )
+{
+#if SDL_VERSION_ATLEAST(2,0,0)
+    return stk_user_event_filter;
+#else
+    return (StkEventFilter)SDL_GetEventFilter();
+#endif
+}
+
+/*
+====================================================================
+Unicode character of a SDL_KEYDOWN event (0 if none).
+====================================================================
+*/
+int stk_event_unicode( const SDL_Event *event )
+{
+#if SDL_VERSION_ATLEAST(2,0,0)
+    /* SDL2 delivers text in separate events; derive the character
+       from the key assuming a US keyboard layout */
+    static const char *unshifted = "`1234567890-=[]\\;',./";
+    static const char *shifted   = "~!@#$%^&*()_+{}|:\"<>?";
+    int sym = event->key.keysym.sym;
+    int mod = event->key.keysym.mod;
+    int shift = ( mod & KMOD_SHIFT ) != 0;
+    char *pos;
+    if ( sym >= SDLK_a && sym <= SDLK_z ) {
+        if ( shift != ( ( mod & KMOD_CAPS ) != 0 ) )
+            return sym - SDLK_a + 'A';
+        return sym;
+    }
+    if ( sym >= 32 && sym < 127 ) {
+        if ( shift && ( pos = strchr( unshifted, sym ) ) )
+            return shifted[pos - unshifted];
+        return sym;
+    }
+    if ( sym >= SDLK_KP_1 && sym <= SDLK_KP_9 )
+        return '1' + sym - SDLK_KP_1;
+    switch ( sym ) {
+        case SDLK_KP_0: return '0';
+        case SDLK_KP_PERIOD: return '.';
+        case SDLK_KP_DIVIDE: return '/';
+        case SDLK_KP_MULTIPLY: return '*';
+        case SDLK_KP_MINUS: return '-';
+        case SDLK_KP_PLUS: return '+';
+        case SDLK_RETURN:
+        case SDLK_KP_ENTER: return '\r';
+        case SDLK_BACKSPACE: return '\b';
+        case SDLK_TAB: return '\t';
+        case SDLK_ESCAPE: return 27;
+        case SDLK_DELETE: return 127;
+    }
+    return 0;
+#else
+    return event->key.keysym.unicode;
+#endif
+}
+
+/*
+====================================================================
+Get the color key of a surface. Returns False if the surface
+has no color key.
+====================================================================
+*/
+int stk_surface_get_colorkey( SDL_Surface *surface, Uint32 *key )
+{
+#if SDL_VERSION_ATLEAST(2,0,0)
+    return SDL_GetColorKey( surface, key ) == 0;
+#else
+    if ( !( surface->flags & SDL_SRCCOLORKEY ) )
+        return 0;
+    *key = surface->format->colorkey;
+    return 1;
+#endif
+}
+
+#if SDL_VERSION_ATLEAST(2,0,0)
+
+/* SDL 1.2 COMPATIBILITY */
+
+/*
+====================================================================
+Installed as SDL2 event filter: drop or convert events so that
+the game receives what SDL 1.2 delivered, then apply the filter
+set by stk_set_event_filter().
+====================================================================
+*/
+static int SDLCALL stk_event_filter_wrapper( void *data, SDL_Event *event )
+{
+    int x, y, wheel;
+    switch ( event->type ) {
+        case SDL_QUIT:
+        case SDL_KEYUP:
+        case SDL_MOUSEMOTION:
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+            break;
+        case SDL_KEYDOWN:
+            /* SDL 1.2 had key repeat disabled by default */
+            if ( event->key.repeat )
+                return 0;
+            break;
+        case SDL_MOUSEWHEEL:
+            /* SDL 1.2 reported the wheel as buttons 4 (up) and 5 (down) */
+            wheel = event->wheel.y;
+            if ( event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED )
+                wheel = -wheel;
+            if ( wheel == 0 || event->wheel.which == SDL_TOUCH_MOUSEID )
+                return 0;
+            SDL_GetMouseState( &x, &y );
+            event->button.type = SDL_MOUSEBUTTONDOWN;
+            event->button.which = 0;
+            event->button.button = ( wheel > 0 ) ? STK_WHEEL_UP : STK_WHEEL_DOWN;
+            event->button.state = SDL_PRESSED;
+            event->button.clicks = 1;
+            event->button.x = x;
+            event->button.y = y;
+            break;
+        case SDL_WINDOWEVENT:
+            /* only losing focus is of interest (pauses the game) */
+            if ( event->window.event != SDL_WINDOWEVENT_FOCUS_LOST &&
+                 event->window.event != SDL_WINDOWEVENT_MINIMIZED &&
+                 event->window.event != SDL_WINDOWEVENT_HIDDEN )
+                return 0;
+            break;
+        default:
+            return 0;
+    }
+    if ( stk_user_event_filter )
+        return stk_user_event_filter( event );
+    return 1;
+}
+
+/*
+====================================================================
+SDL_SetAlpha(): per-surface alpha is the alpha modulation of the
+surface in SDL2.
+====================================================================
+*/
+int stk_compat_set_alpha( SDL_Surface *surface, Uint32 flags, Uint8 alpha )
+{
+    if ( flags & SDL_SRCALPHA ) {
+        SDL_SetSurfaceAlphaMod( surface, alpha );
+        return SDL_SetSurfaceBlendMode( surface, SDL_BLENDMODE_BLEND );
+    }
+    SDL_SetSurfaceAlphaMod( surface, SDL_ALPHA_OPAQUE );
+    return SDL_SetSurfaceBlendMode( surface, SDL_BLENDMODE_NONE );
+}
+
+/*
+====================================================================
+SDL_GetKeyState(): returns the key states indexed by STK_KEYIDX().
+====================================================================
+*/
+Uint8 *stk_compat_get_key_state( int *numkeys )
+{
+    static Uint8 keys[SDLK_LAST];
+    const Uint8 *state;
+    int i, count;
+    memset( keys, 0, sizeof( keys ) );
+    state = SDL_GetKeyboardState( &count );
+    for ( i = 0; i < count; i++ )
+        if ( state[i] )
+            keys[STK_KEYIDX( SDL_GetKeyFromScancode( i ) )] = 1;
+    keys[0] = 0; /* unknown keys */
+    if ( numkeys )
+        *numkeys = SDLK_LAST;
+    return keys;
+}
+
+/*
+====================================================================
+SDL_GetKeyName(): SDL 1.2 used lower case key names.
+====================================================================
+*/
+char *stk_compat_get_key_name( SDL_Keycode key )
+{
+    static char name[64];
+    int i;
+    snprintf( name, sizeof( name ), "%s", (SDL_GetKeyName)( key ) );
+    for ( i = 0; name[i]; i++ )
+        name[i] = tolower( (unsigned char)name[i] );
+    return name;
+}
+
+void stk_compat_set_caption( const char *title, const char *icon )
+{
+    if ( stk_window )
+        SDL_SetWindowTitle( stk_window, title );
+}
+
+int stk_compat_grab_input( int mode )
+{
+    /* relative mode keeps the pointer inside the window
+       (pointer lock in a browser) */
+    SDL_SetRelativeMouseMode( mode == SDL_GRAB_ON );
+    return mode;
+}
+
+void stk_compat_warp_mouse( Uint16 x, Uint16 y )
+{
+    SDL_WarpMouseInWindow( stk_window, x, y );
+}
+
+#endif

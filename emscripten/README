@@ -1,0 +1,52 @@
+LBreakout2 for the web (Emscripten / WebAssembly)
+=================================================
+
+Building
+--------
+Install the Emscripten SDK (https://emscripten.org/docs/getting_started/),
+then from the top-level source directory:
+
+  source /path/to/emsdk/emsdk_env.sh
+  make -f emscripten/Makefile
+
+The result is in build-web/: index.html, index.js, index.wasm and
+index.data (the game data). Serve the directory with any static web
+server, e.g.
+
+  make -f emscripten/Makefile serve      # http://localhost:8080/
+
+Opening index.html directly from disk (file://) does not work.
+
+Continuous deployment
+---------------------
+.github/workflows/web.yml builds the web version on GitHub Actions and
+deploys build-web/index.* to Cloudflare Pages on pushes to main/master
+(pull requests are only built). It needs the repository secrets
+CLOUDFLARE_API_TOKEN (permission "Cloudflare Pages: Edit") and
+CLOUDFLARE_ACCOUNT_ID; the project name is taken from the variable
+CLOUDFLARE_PROJECT_NAME (default: lbreakout2). The project is created on
+the first deployment if it does not exist.
+
+How the port works
+------------------
+- The web build uses SDL2, SDL2_mixer and libpng from Emscripten's ports.
+  gui/stk.c/stk.h contain a small SDL 1.2 compatibility layer that is
+  active when compiling against SDL2 (SDL_SetAlpha, colour keys, key
+  states, unicode, event filter, ...). The game still draws into a 16bit
+  software surface which is copied to the canvas on every display update.
+  The native autotools build keeps using SDL 1.2 as before.
+- The game's blocking loops are kept as they are and compiled with
+  ASYNCIFY: every display update waits for the browser's next animation
+  frame, SDL_Delay() and SDL_WaitEvent() sleep without blocking the page.
+- Config, highscores, saved games and custom levels live in
+  /home/web_user/.lgames which is stored in the browser's IndexedDB. It is
+  written every few seconds, when returning to the main menu, when the
+  page is hidden and when the game is quit.
+- Network play is not available (no NETWORK_ENABLED); browsers cannot
+  open the plain UDP sockets it uses.
+- Text input assumes a US keyboard layout for shifted characters.
+- Fullscreen ('f' or Graphics/Display) uses the browser's Fullscreen API
+  for the whole page. Browsers allow it only right after a key press or
+  click, so the game always starts windowed.
+- In game the mouse pointer is locked to the canvas after the first click;
+  press Escape to release it.

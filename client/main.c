@@ -38,6 +38,9 @@
 #include "client.h"
 #include "../gui/gui.h"
 #include "setselect.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #define CHART_FILE_NAME "lbreakout2.hscr"
 
@@ -58,6 +61,29 @@ int msglen = 0;
 
 FILE *hi_dir_chart_file = NULL;
 
+#ifdef __EMSCRIPTEN__
+/*
+====================================================================
+Save config and highscores and write them to the browser's
+persistent storage (the config directory is an IDBFS mount, see
+emscripten/pre.js). Also called from JavaScript when the page is
+hidden or closed.
+====================================================================
+*/
+EMSCRIPTEN_KEEPALIVE void web_save_state( void )
+{
+    config_save();
+    chart_save();
+    EM_ASM( Module.persistFiles(); );
+}
+
+/* wait until the save directory is stored (the IndexedDB connection
+   is closed when the program exits) */
+EM_ASYNC_JS( void, web_wait_persisted, (void), {
+    await Module.persistFiles();
+} );
+#endif
+
 int main(int argc, char *argv[])
 {
     int result = ACTION_NONE;
@@ -66,7 +92,7 @@ int main(int argc, char *argv[])
     char path[512];
     const char *set_name = NULL;
     SDL_Surface *loading;
-#ifdef __unix__
+#if defined(__unix__) && !defined(__EMSCRIPTEN__)
     gid_t realgid;
 
     hi_dir_chart_file = fopen(HI_DIR "/" CHART_FILE_NAME, "r+");
@@ -106,13 +132,17 @@ int main(int argc, char *argv[])
     config_load();
     
     stk_init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK );
+#ifdef __EMSCRIPTEN__
+    /* the browser grants fullscreen only right after a key press or click */
+    config.fullscreen = 0;
+#endif
     if ( config.fullscreen )
         stk_display_open( SDL_SWSURFACE | SDL_FULLSCREEN, 640, 480, 16 );
     else
         stk_display_open( SDL_SWSURFACE, 640, 480, 16 );
     stk_audio_open( 0,0,0,config.audio_buffer_size );
     SDL_WM_SetCaption( "LBreakout2", 0 );
-    SDL_SetEventFilter( event_filter );
+    stk_set_event_filter( event_filter );
     stk_audio_enable_sound( config.sound );
     stk_audio_set_sound_volume( config.volume * 16 );
     
@@ -226,6 +256,9 @@ int main(int argc, char *argv[])
                 break;
             default: break;
         }
+#ifdef __EMSCRIPTEN__
+        web_save_state();
+#endif
     }
     manager_fade( STK_FADE_OUT );
     /* delete stuff */
@@ -246,6 +279,10 @@ int main(int argc, char *argv[])
     
     if (hi_dir_chart_file)
         fclose(hi_dir_chart_file);
+
+#ifdef __EMSCRIPTEN__
+    web_wait_persisted();
+#endif
 
     return EXIT_SUCCESS;
 }

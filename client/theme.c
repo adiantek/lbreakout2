@@ -426,9 +426,11 @@ void theme_load( char *name )
         stk_surface_get_pixel( paddle_pic, 0, 0 ) );
     if ( paddle_pic->w < 6 * paddle_cw ) {
         /* no top paddle specified so duplicate first one */
+        Uint32 colorkey = 0;
+        stk_surface_get_colorkey( paddle_pic, &colorkey );
         surf = stk_surface_create( SDL_SWSURFACE, paddle_pic->w*2, paddle_pic->h );
-        SDL_SetColorKey( surf, SDL_SRCCOLORKEY, paddle_pic->format->colorkey );
-        SDL_FillRect( surf, 0, paddle_pic->format->colorkey );
+        SDL_SetColorKey( surf, SDL_SRCCOLORKEY, colorkey );
+        SDL_FillRect( surf, 0, colorkey );
         stk_surface_blit( paddle_pic, 0,0,-1,-1, surf, 0,0 );
         stk_surface_blit( paddle_pic, 0,0,-1,-1, surf, paddle_pic->w,0 );
         stk_surface_free( &paddle_pic ); paddle_pic = surf;

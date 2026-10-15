@@ -356,7 +356,7 @@ void help_run()
                         help_draw_side(cur_side);
 						break;
                     case SDLK_f:
-						config.fullscreen = !config.fullscreen;
+						config.fullscreen = !stk_display_get_fullscreen();
                         stk_display_apply_fullscreen( config.fullscreen );
                         help_draw_side(cur_side);
                         break;

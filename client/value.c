@@ -203,7 +203,7 @@ Set key value if VALUE_KEY and clear grab flag
 void value_set_key( Value *value, int val_int )
 {
     Value *other_key;
-    if ( !value->filter[val_int] ) return;
+    if ( !value->filter[STK_KEYIDX(val_int)] ) return;
     list_reset( value->other_keys );
     while ( ( other_key = list_next( value->other_keys ) ) )
         if ( *other_key->val_int == val_int ) return;

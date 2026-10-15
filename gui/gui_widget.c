@@ -218,7 +218,7 @@ void gui_event_init( GuiEvent *gui_event, SDL_Event *sdl_event )
             else
                 gui_event->type = GUI_KEY_PRESSED;
             gui_event->key.keysym = sdl_event->key.keysym.sym;
-            gui_event->key.unicode = sdl_event->key.keysym.unicode;
+            gui_event->key.unicode = stk_event_unicode( sdl_event );
             break;
     }
 }

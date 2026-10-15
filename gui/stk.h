@@ -23,6 +23,68 @@
   #include <SDL_mixer.h>
 #endif
 
+#if SDL_VERSION_ATLEAST(2,0,0)
+/*
+====================================================================
+SDL 1.2 compatibility for the SDL2 build (used for Emscripten).
+The display is kept as a 16bit software surface (stk_display)
+that is copied to the SDL2 window by stk_display_update().
+====================================================================
+*/
+#define SDL_SRCCOLORKEY SDL_TRUE
+#define SDL_SRCALPHA    0x00010000
+#define SDL_FULLSCREEN  0x80000000
+#define SDL_NOEVENT     SDL_FIRSTEVENT
+#define SDL_GRAB_OFF    0
+#define SDL_GRAB_ON     1
+/* SDL2 keycodes are either < 256 or scancode based (bit 30 set);
+   keys are mapped to a compact index to be usable in arrays */
+#define SDLK_LAST       768
+#define STK_KEYIDX( k ) \
+ ( ((k) & SDLK_SCANCODE_MASK) ? 256 + ((k) & 0x1ff) : \
+   ((k) >= 0 && (k) < 256) ? (k) : 0 )
+#define SDL_AllocSurface  SDL_CreateRGBSurface
+#define SDL_SetAlpha      stk_compat_set_alpha
+#define SDL_GetKeyState   stk_compat_get_key_state
+#define SDL_GetKeyName( key ) stk_compat_get_key_name( key )
+#define SDL_WM_SetCaption stk_compat_set_caption
+#define SDL_WM_GrabInput  stk_compat_grab_input
+#define SDL_WarpMouse     stk_compat_warp_mouse
+int stk_compat_set_alpha( SDL_Surface *surface, Uint32 flags, Uint8 alpha );
+Uint8 *stk_compat_get_key_state( int *numkeys );
+char *stk_compat_get_key_name( SDL_Keycode key );
+void stk_compat_set_caption( const char *title, const char *icon );
+int stk_compat_grab_input( int mode );
+void stk_compat_warp_mouse( Uint16 x, Uint16 y );
+#else
+#define STK_KEYIDX( k ) (k)
+#endif
+
+/*
+====================================================================
+Event filter as known from SDL 1.2. Use stk_set_event_filter() and
+stk_get_event_filter() instead of the SDL functions.
+====================================================================
+*/
+typedef int (*StkEventFilter)( const SDL_Event *event );
+void stk_set_event_filter( StkEventFilter filter );
+StkEventFilter stk_get_event_filter( void );
+
+/*
+====================================================================
+Unicode character of a SDL_KEYDOWN event (0 if none).
+====================================================================
+*/
+int stk_event_unicode( const SDL_Event *event );
+
+/*
+====================================================================
+Get the color key of a surface. Returns False if the surface
+has no color key.
+====================================================================
+*/
+int stk_surface_get_colorkey( SDL_Surface *surface, Uint32 *key );
+
 /* GENERAL */
 
 #define SDL_NONFATAL 0x10000000
@@ -137,6 +199,14 @@ Switch fullscreen/windowed for current resolution.
 ====================================================================
 */
 void stk_display_apply_fullscreen( int fullscreen );
+
+/*
+====================================================================
+Return True if the display is in fullscreen mode (or, in the browser,
+a switch to fullscreen is pending).
+====================================================================
+*/
+int stk_display_get_fullscreen( void );
 
 /* SURFACE */
 

@@ -257,7 +257,7 @@ int menu_handle_event( Menu *menu, SDL_Event *event )
                     default:
                         /* if type is edit: edit! */
                         if ( menu->cur_item && menu->cur_item->type == ITEM_EDIT ) {
-                            value_edit( menu->cur_item->value, event->key.keysym.sym, event->key.keysym.unicode );
+                            value_edit( menu->cur_item->value, event->key.keysym.sym, stk_event_unicode( event ) );
 #ifdef AUDIO_ENABLED
                             stk_sound_play( wav_menu_click );
 #endif

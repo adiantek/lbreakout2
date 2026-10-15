@@ -138,7 +138,7 @@ int confirm( StkFont *font, char *str, int type )
                     }
 					else
 					if ( event.key.keysym.sym == SDLK_f ) {
-						config.fullscreen = !config.fullscreen;
+						config.fullscreen = !stk_display_get_fullscreen();
                         stk_display_apply_fullscreen( config.fullscreen );
 						draw_confirm_screen( font, buffer, str );
 						stk_display_update( STK_UPDATE_ALL );
@@ -264,12 +264,14 @@ SDL_Surface* create_shadow( SDL_Surface *surf, int x, int y, int w, int h )
     int i, j;
     Uint32 white = SDL_MapRGB( stk_display->format, 0xff, 0xff, 0xff );
     Uint32 black = SDL_MapRGB( stk_display->format, 0, 0, 0 );
+    Uint32 colorkey = 0;
+    int has_colorkey = stk_surface_get_colorkey( surf, &colorkey );
     shadow = stk_surface_create( SDL_SWSURFACE, w, h );
     SDL_SetColorKey( shadow, SDL_SRCCOLORKEY, white );
     for ( i = 0; i < w; i++ )
         for ( j = 0; j < h; j++ ) {
-            if ( surf->flags & SDL_SRCCOLORKEY &&
-                 stk_surface_get_pixel( surf, i, j ) == surf->format->colorkey )
+            if ( has_colorkey &&
+                 stk_surface_get_pixel( surf, i, j ) == colorkey )
                 stk_surface_set_pixel( shadow, i, j, white );
             else
                 stk_surface_set_pixel( shadow, i, j, black );
@@ -325,7 +327,7 @@ int enter_string( StkFont *font, char *caption, char *edit, int limit )
                         break;
                     default:
                         if ( event.key.keysym.sym >= 32 && event.key.keysym.sym < 128 && length < limit ) {
-                            edit[length++] = event.key.keysym.unicode;
+                            edit[length++] = stk_event_unicode( &event );
                             edit[length] = 0;
                         }
                         break;
@@ -399,7 +401,7 @@ void game_nuke( void )
 #ifdef AUDIO_ENABLED
 	stk_sound_play( wav_click );
 #endif
-	SDL_SetEventFilter(0);
+	stk_set_event_filter(0);
 	event_clear_sdl_queue();
 	/* backup screen contents */
 	stk_surface_blit( stk_display, 0,0,-1,-1, buffer, 0,0 );
@@ -488,7 +490,7 @@ void game_nuke( void )
 	stk_display_update( STK_UPDATE_ALL );
 	SDL_FreeSurface(red_mask);
 	SDL_FreeSurface(buffer);
-	SDL_SetEventFilter(event_filter);
+	stk_set_event_filter(event_filter);
 }
 
 /* gray screen and display a formatted text, directly update the

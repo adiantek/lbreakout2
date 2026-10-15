@@ -51,10 +51,10 @@ Clear the SDL event key (keydown events)
 */
 void event_clear_sdl_queue()
 {
-    SDL_EventFilter old_filter;
+    StkEventFilter old_filter;
     SDL_Event event;
-    old_filter = SDL_GetEventFilter();
-    SDL_SetEventFilter( all_filter );
+    old_filter = stk_get_event_filter();
+    stk_set_event_filter( all_filter );
     while ( SDL_PollEvent( &event ) );
-    SDL_SetEventFilter( old_filter );
+    stk_set_event_filter( old_filter );
 }

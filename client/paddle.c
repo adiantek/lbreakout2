@@ -278,13 +278,13 @@ void paddle_handle_events( Paddle *paddle, int ms )
 	}
 	
 	/* keys */
-	if ( keystate[config.k_left] ) {
-		paddle->cur_x -= config.key_speed * (ms << keystate[config.k_turbo]);
+	if ( keystate[STK_KEYIDX(config.k_left)] ) {
+		paddle->cur_x -= config.key_speed * (ms << keystate[STK_KEYIDX(config.k_turbo)]);
 		paddle->friction_delay = 0; paddle->v_x = 0.0;
 		has_moved = 1;
 	}
-	if ( keystate[config.k_right] ) {
-		paddle->cur_x += config.key_speed * (ms << keystate[config.k_turbo]);
+	if ( keystate[STK_KEYIDX(config.k_right)] ) {
+		paddle->cur_x += config.key_speed * (ms << keystate[STK_KEYIDX(config.k_turbo)]);
 		paddle->friction_delay = 0; paddle->v_x = 0.0;
 		has_moved = 1;
 	}
@@ -324,25 +324,25 @@ void paddle_handle_events( Paddle *paddle, int ms )
 	}
 
 	/* update the fire flags (left/right) */
-	if ( buttonstate & SDL_BUTTON(1) || keystate[config.k_lfire] )
+	if ( buttonstate & SDL_BUTTON(1) || keystate[STK_KEYIDX(config.k_lfire)] )
 		paddle->fire_left = 1;
 	else
 		paddle->fire_left = 0;
-	if ( buttonstate & SDL_BUTTON(3) || keystate[config.k_rfire] )
+	if ( buttonstate & SDL_BUTTON(3) || keystate[STK_KEYIDX(config.k_rfire)] )
 		paddle->fire_right = 1;
 	else
 		paddle->fire_right = 0;
 
         /* update maxspeed request - handled in ../game/balls.c::balls_update */
         paddle->maxballspeed_request_old = paddle->maxballspeed_request;
-        if ( buttonstate & SDL_BUTTON(2) || keystate[config.k_maxballspeed] )
+        if ( buttonstate & SDL_BUTTON(2) || keystate[STK_KEYIDX(config.k_maxballspeed)] )
             paddle->maxballspeed_request = 1;
         else
             paddle->maxballspeed_request = 0;
         //printf( "%d\n", paddle->maxballspeed_request );
 
 	/* update return key */
-	if (  buttonstate & SDL_BUTTON(2) || keystate[config.k_return] )
+	if (  buttonstate & SDL_BUTTON(2) || keystate[STK_KEYIDX(config.k_return)] )
 		paddle->ball_return_key_pressed = 1;
 	else
 		paddle->ball_return_key_pressed = 0;
