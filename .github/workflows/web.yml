@@ -29,19 +29,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: emscripten-core/setup-emsdk@v15
+      # The cache is saved at the end of the job, so it also holds the
+      # SDL2/SDL2_mixer/libpng ports compiled by the first build.
+      - name: Cache emsdk
+        uses: actions/cache@v5
         with:
-          version: ${{ env.EMSDK_VERSION }}
-          # also keeps the compiled SDL2/libpng ports between runs
-          actions-cache-folder: emsdk-cache
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}-${{ hashFiles('emscripten/Makefile') }}
+          restore-keys: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}-
+
+      - name: Install emsdk
+        run: |
+          [ -d ~/emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION"
+          ~/emsdk/emsdk activate "$EMSDK_VERSION"
 
       - name: Build
-        run: make -f emscripten/Makefile -j"$(nproc)"
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          make -f emscripten/Makefile -j"$(nproc)"
 
       - name: Collect files
         run: |
           mkdir dist
-          cp build-web/index.html build-web/index.js build-web/index.wasm build-web/index.data dist/
+          cp build-web/index.html build-web/index.js build-web/index.wasm build-web/index.data \
+             build-web/favicon.ico dist/
 
       - uses: actions/upload-artifact@v7
         with:

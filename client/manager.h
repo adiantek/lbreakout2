@@ -69,6 +69,14 @@ void manager_show();
 
 /*
 ====================================================================
+Draw the web links right aligned into 'surf' above y 'bottom' and
+remember their position. Return the y of the top line.
+====================================================================
+*/
+int manager_draw_links( SDL_Surface *surf, int bottom );
+
+/*
+====================================================================
 Update set list when creating a new file for editor.
 ====================================================================
 */

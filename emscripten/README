@@ -9,9 +9,9 @@ then from the top-level source directory:
   source /path/to/emsdk/emsdk_env.sh
   make -f emscripten/Makefile
 
-The result is in build-web/: index.html, index.js, index.wasm and
-index.data (the game data). Serve the directory with any static web
-server, e.g.
+The result is in build-web/: index.html, index.js, index.wasm,
+index.data (the game data) and favicon.ico. Serve the directory with any
+static web server, e.g.
 
   make -f emscripten/Makefile serve      # http://localhost:8080/
 
@@ -23,9 +23,9 @@ Continuous deployment
 deploys build-web/index.* to Cloudflare Pages on pushes to main/master
 (pull requests are only built). It needs the repository secrets
 CLOUDFLARE_API_TOKEN (permission "Cloudflare Pages: Edit") and
-CLOUDFLARE_ACCOUNT_ID; the project name is taken from the variable
-CLOUDFLARE_PROJECT_NAME (default: lbreakout2). The project is created on
-the first deployment if it does not exist.
+CLOUDFLARE_ACCOUNT_ID, and the variable CLOUDFLARE_PROJECT_NAME with the
+name of an existing Pages project (e.g. lbreakout2). emsdk and the
+compiled ports are kept in the Actions cache between runs.
 
 How the port works
 ------------------

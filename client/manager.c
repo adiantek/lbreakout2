@@ -24,6 +24,9 @@
 #include "../gui/stk.h"
 #include "theme.h"
 #include "slot.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 extern SDL_Surface *stk_display;
 extern Config config;
@@ -48,6 +51,19 @@ extern StkSound *wav_menu_motion;
 /* some items we need to know to assign name lists later */
 Item *item_set, *item_theme, *item_resume_0;
 Item *item_display;
+extern StkFont *chfont; /* white chart font: highlighted link */
+
+/* links in the lower right corner of the menu background */
+typedef struct {
+    char *url;
+    SDL_Rect rect;
+} MenuLink;
+static MenuLink menu_links[] = {
+    { "https://lgames.sf.net" },
+    { "https://github.com/adiantek/lbreakout2" },
+};
+#define MENU_LINK_COUNT (int)(sizeof( menu_links ) / sizeof( menu_links[0] ))
+static int menu_link_hover = -1;
 extern List *charts;
 int chart_id = 0; /* current chart displayed */
 /* theme name list */
@@ -716,6 +732,73 @@ void manager_delete()
 }
 /*
 ====================================================================
+Links
+====================================================================
+*/
+#ifdef __EMSCRIPTEN__
+EM_JS( void, menu_link_open_url, (const char *url), {
+    window.open( UTF8ToString( url ), '_blank', 'noopener' );
+} );
+EM_JS( void, menu_link_set_pointer, (int on), {
+    Module.canvas.style.cursor = on ? 'pointer' : 'default';
+} );
+#else
+static void menu_link_open_url( const char *url )
+{
+    printf( "%s\n", url );
+}
+static void menu_link_set_pointer( int on ) {}
+#endif
+int manager_draw_links( SDL_Surface *surf, int bottom )
+{
+    int i, y = bottom;
+    mfont->align = STK_FONT_ALIGN_RIGHT | STK_FONT_ALIGN_BOTTOM;
+    for ( i = MENU_LINK_COUNT - 1; i >= 0; i-- ) {
+        menu_links[i].rect.w = stk_font_string_width( mfont, menu_links[i].url );
+        menu_links[i].rect.h = mfont->height;
+        menu_links[i].rect.x = surf->w - 4 - menu_links[i].rect.w;
+        menu_links[i].rect.y = y - mfont->height;
+        stk_font_write( mfont, surf, surf->w - 4, y, STK_OPAQUE, menu_links[i].url );
+        y -= mfont->height;
+    }
+    return y;
+}
+static int menu_link_at( int x, int y )
+{
+    int i;
+    SDL_Rect *r;
+    for ( i = 0; i < MENU_LINK_COUNT; i++ ) {
+        r = &menu_links[i].rect;
+        if ( x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h )
+            return i;
+    }
+    return -1;
+}
+/* draw link 'id' normal or highlighted to the display */
+static void menu_link_show( int id, int highlight )
+{
+    SDL_Rect *r = &menu_links[id].rect;
+    stk_surface_blit( mbkgnd, r->x, r->y, r->w, r->h, stk_display, r->x, r->y );
+    if ( highlight ) {
+        chfont->align = STK_FONT_ALIGN_LEFT | STK_FONT_ALIGN_TOP;
+        stk_font_write( chfont, stk_display, r->x, r->y, STK_OPAQUE, menu_links[id].url );
+    }
+    stk_display_store_rect( r );
+}
+static void menu_link_set_hover( int id )
+{
+    if ( id == menu_link_hover )
+        return;
+    if ( menu_link_hover >= 0 )
+        menu_link_show( menu_link_hover, 0 );
+    if ( id >= 0 )
+        menu_link_show( id, 1 );
+    menu_link_set_pointer( id >= 0 );
+    menu_link_hover = id;
+}
+
+/*
+====================================================================
 Run menu until request sent
 ====================================================================
 */
@@ -723,7 +806,7 @@ int manager_run()
 {
     SDL_Event event;
     int result = ACTION_NONE;
-    int ms;
+    int ms, mx, my, link;
     /* draw highscores */
     chart_show( chart_set_query_id( chart_id ), cx, cy, cw, ch );
     /* loop */
@@ -733,6 +816,9 @@ int manager_run()
         hint_hide();
 	/* fullscreen if no item selected */
 	if ( SDL_PollEvent( &event ) ) {
+		link = -1;
+		if ( event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT )
+			link = menu_link_at( event.button.x, event.button.y );
 		if ( cur_menu->cur_item == 0 || 
 		     (cur_menu->cur_item->type != ITEM_EDIT && cur_menu->cur_item->type != ITEM_KEY ) )
 		if ( event.type == SDL_KEYDOWN )
@@ -741,8 +827,12 @@ int manager_run()
 			stk_display_apply_fullscreen( config.fullscreen );
 			stk_surface_blit( mbkgnd, 0,0,-1,-1, stk_display, 0,0 );
 			stk_display_update( STK_UPDATE_ALL );
+			menu_link_hover = -1;
 		}
-		result = menu_handle_event( cur_menu, &event );
+		if ( link >= 0 )
+			menu_link_open_url( menu_links[link].url );
+		else
+			result = menu_handle_event( cur_menu, &event );
 	}
 	else
 		menu_handle_event( cur_menu, 0 ); /* update motion */
@@ -750,6 +840,8 @@ int manager_run()
         if ( config.fullscreen != stk_display_get_fullscreen() )
             config.fullscreen = !config.fullscreen;
         value_update_str( item_display->value );
+        SDL_GetMouseState( &mx, &my );
+        menu_link_set_hover( menu_link_at( mx, my ) );
         ms = stk_timer_get_time();
         menu_update( cur_menu, ms );
         hint_update( ms );
@@ -779,6 +871,8 @@ Update screen without menu itself as this is shown next frame.
 */
 void manager_show()
 {
+    menu_link_hover = -1;
+    menu_link_set_pointer( 0 );
     stk_display_apply_fullscreen( config.fullscreen );
     stk_surface_blit( mbkgnd, 0,0,-1,-1, stk_display, 0,0 );
     chart_show( chart_set_query_id( chart_id ), cx, cy, cw, ch );

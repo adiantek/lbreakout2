@@ -2,7 +2,7 @@
 #
 # Usage (from the top-level source directory):
 #   source /path/to/emsdk/emsdk_env.sh
-#   make -f emscripten/Makefile            # -> build-web/index.html (+ .js/.wasm/.data)
+#   make -f emscripten/Makefile            # -> build-web/index.html (+ .js/.wasm/.data, favicon.ico)
 #   make -f emscripten/Makefile serve      # local test server on :8080
 #
 # Uses the SDL2, SDL2_mixer and libpng ports shipped with Emscripten.
@@ -70,10 +70,14 @@ obj = $(1:%.c=$(OBJDIR)/%.o)
 LIBS = $(OBJDIR)/libcommon.a $(OBJDIR)/libGui.a $(OBJDIR)/libgame.a
 DATA = $(shell find client/gfx client/sounds client/levels client/gui_theme -type f ! -name 'Makefile*')
 
-all: $(OUT)/index.html
+all: $(OUT)/index.html $(OUT)/favicon.ico
 
 $(OUT)/index.html: $(call obj,$(CLIENT_SRCS)) $(LIBS) $(DATA) emscripten/pre.js emscripten/shell.html
 	$(CC) $(call obj,$(CLIENT_SRCS)) $(LIBS) $(ALL_LDFLAGS) -o $@
+
+$(OUT)/favicon.ico: client/win32.ico
+	@mkdir -p $(OUT)
+	cp $< $@
 
 $(OBJDIR)/libcommon.a: $(call obj,$(COMMON_SRCS))
 $(OBJDIR)/libGui.a: $(call obj,$(GUI_SRCS))

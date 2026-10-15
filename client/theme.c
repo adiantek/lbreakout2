@@ -23,6 +23,7 @@
 #include "lbreakout.h"
 #include "config.h"
 #include "theme.h"
+#include "manager.h"
 
 extern SDL_Surface *stk_display;
 extern Config config;
@@ -381,7 +382,7 @@ void theme_load( char *name )
     SDL_Surface *surf;
     struct stat filestat;
     char aux[128];
-    int i;
+    int i, y;
     printf( "Loading theme '%s'\n", name );
     /* clear resources */
     theme_delete();
@@ -547,8 +548,9 @@ void theme_load( char *name )
     /* add version to background */
     mfont->align = STK_FONT_ALIGN_RIGHT | STK_FONT_ALIGN_BOTTOM;
     sprintf( aux, "v%s", VERSION );
-    stk_font_write( mfont, mbkgnd, mbkgnd->w - 4, stk_display->h - 4 - mfont->height, STK_OPAQUE, aux );
-    stk_font_write( mfont, mbkgnd, mbkgnd->w - 4, stk_display->h - 4, STK_OPAQUE, "http://lgames.sf.net" );
+    y = manager_draw_links( mbkgnd, stk_display->h - 4 );
+    mfont->align = STK_FONT_ALIGN_RIGHT | STK_FONT_ALIGN_BOTTOM;
+    stk_font_write( mfont, mbkgnd, mbkgnd->w - 4, y, STK_OPAQUE, aux );
     /* charts */
     /* load resources */
     cfont = theme_load_font_fixed( "f_small_yellow.png", 32, 96, 8 );
